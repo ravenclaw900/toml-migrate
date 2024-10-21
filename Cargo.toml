@@ -2,8 +2,19 @@
 name = "toml-migrate"
 version = "0.1.0"
 edition = "2021"
+description = "Automatically migrate versioned config files to the latest version"
+repository = "https://github.com/ravenclaw900/toml-migrate"
+license = "MIT OR Apache-2.0"
+keywords = ["toml", "config", "migrate"]
+categories = ["config"]
 
 [dependencies]
 serde = "1.0.210"
 thiserror = "1.0.64"
-toml_edit = { version = "0.22.22", features = ["parse", "serde"], default-features = false }
+toml_edit = { version = "0.22.22", features = [
+    "parse",
+    "serde",
+], default-features = false }
+
+[dev-dependencies]
+serde = { version = "1.0.210", features = ["derive"] }
