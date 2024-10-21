@@ -1,0 +1,9 @@
+[package]
+name = "toml-migrate"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serde = "1.0.210"
+thiserror = "1.0.64"
+toml_edit = { version = "0.22.22", features = ["parse", "serde"], default-features = false }
