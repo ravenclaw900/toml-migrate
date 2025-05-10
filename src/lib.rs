@@ -1,10 +1,8 @@
 #![doc = include_str!("../README.md")]
 
-use std::any::{Any, TypeId};
+use std::any::Any;
 
 use serde::de::DeserializeOwned;
-use thiserror::Error;
-use toml_edit::DocumentMut;
 
 /// Trait used to determine config versions and migration order
 ///
@@ -13,64 +11,29 @@ pub trait Migrate: From<Self::From> + DeserializeOwned + Any {
     type From: Migrate;
     const VERSION: i64;
 
-    fn migrate_from_doc(version: i64, doc: DocumentMut) -> Result<Self, Error> {
+    fn migrate_from_str(version: i64, config_str: &str) -> Result<Self, basic_toml::Error> {
         if version == Self::VERSION {
-            Ok(toml_edit::de::from_document(doc)?)
-        } else if TypeId::of::<Self>() == TypeId::of::<Self::From>() {
-            Err(Error::NoValidVersion)
+            basic_toml::from_str(config_str)
         } else {
-            Self::From::migrate_from_doc(version, doc).map(Into::into)
+            Self::From::migrate_from_str(version, config_str).map(Into::into)
         }
     }
 }
 
-/// Struct that contains some configuration on how to migrate a config
-///
-/// ```no_run
-/// let migrator = ConfigMigrator::new("version").with_default_version(0);
-///
-/// let (config, migration_occured) = migrator.migrate::<ConfigV2>(config_str).unwrap();
-/// ```
-pub struct ConfigMigrator<'a> {
-    version_key: &'a str,
-    default_version: Option<i64>,
+pub trait Version: DeserializeOwned {
+    fn version(&self) -> i64;
 }
 
-impl<'a> ConfigMigrator<'a> {
-    /// Creates a new [`ConfigMigrator`] using the provided key to find the version of the config
-    #[must_use]
-    pub const fn new(version_key: &'a str) -> Self {
-        Self {
-            version_key,
-            default_version: None,
-        }
-    }
+pub fn migrate_config<T: Migrate, Ver: Version>(
+    config_str: &str,
+) -> Result<(T, bool), basic_toml::Error> {
+    let version: Ver = basic_toml::from_str(config_str)?;
+    let version = version.version();
 
-    /// Adds a default version to use if it cannot be read from the config file
-    #[must_use]
-    pub const fn with_default_version(mut self, default_version: i64) -> Self {
-        self.default_version = Some(default_version);
-        self
-    }
+    let config = T::migrate_from_str(version, config_str)?;
+    let migration_occured = version != T::VERSION;
 
-    /// Handles the migration between versions of a configuration
-    ///
-    /// On success, returns a tuple with the config and whether any migrations were performed.
-    /// Errors if it could not read the version (and no default was provided), if the version failed to match
-    /// any of the config structs, or if the config file failed to parse.
-    pub fn migrate_config<T: Migrate>(&self, config_str: &str) -> Result<(T, bool), Error> {
-        let mut doc = config_str.parse::<DocumentMut>()?;
-        let version = doc
-            .remove(self.version_key)
-            .and_then(|x| x.as_integer())
-            .or(self.default_version)
-            .ok_or(Error::NoValidVersion)?;
-
-        let config = T::migrate_from_doc(version, doc)?;
-        let migration_occured = version != T::VERSION;
-
-        Ok((config, migration_occured))
-    }
+    Ok((config, migration_occured))
 }
 
 /// Generates a chain connecting different config versions with the [`Migrate`] trait
@@ -99,17 +62,4 @@ macro_rules! build_migration_chain {
 
         $(build_migration_chain!(@internal $type, $($rest)*);)?
     };
-}
-
-#[derive(Debug, Error)]
-pub enum Error {
-    /// Syntax error when parsing the TOML
-    #[error("parsing error")]
-    Parse(#[from] toml_edit::TomlError),
-    /// Error when deserializing the TOML
-    #[error("deserialization error")]
-    Deser(#[from] toml_edit::de::Error),
-    /// Either version field could not be read or provided version field doesn't match a valid version
-    #[error("no valid config version")]
-    NoValidVersion,
 }
